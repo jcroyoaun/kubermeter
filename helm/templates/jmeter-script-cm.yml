@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.jmxconfigmap.name }}
+  namespace: {{ printf "%s-%s" .Values.namespace (toString .Values.namespaceSuffix) }}
+data:
+  jmeter-script.jmx: |-
+    {{ .Files.Get "jmeter-script.jmx" | nindent 4 | trim }}
+  csv_file_assets.csv: |-
+    {{ .Files.Get "csv_file_assets.csv" | nindent 4 | trim }}

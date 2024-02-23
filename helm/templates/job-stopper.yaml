@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.app }}-log-checker
+  namespace: {{ printf "%s-%s" .Values.namespace (toString .Values.namespaceSuffix) }}
+spec:
+  completions: 1
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app }}-log-checker
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+      - name: log-checker
+        image: jcroyoaun/kubermeter-job-stopper 
+        imagePullPolicy: Always
+        volumeMounts:
+          - name: properties-volume
+            mountPath: /usr/properties
+      restartPolicy: Never
+      volumes:
+        - name: properties-volume
+          configMap:
+            name: {{ .Values.propsconfigmap.name }}

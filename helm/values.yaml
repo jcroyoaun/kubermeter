@@ -1,0 +1,49 @@
+image:
+  repository: jcroyoaun 
+  name: jmeter 
+  tag: 5.5
+  pullPolicy: Always
+  replicas: 1
+
+cronjob:
+  schedule: "*/2 * * * *"
+
+
+propsconfigmap:
+  name: jmeter-properties
+  filename: target_hosts.txt
+  
+runconfigmap:
+  name: runsleep
+  filename: run_sleep.sh
+
+jmxconfigmap:
+  name: jmx-configmap-script
+  filename: 
+
+service:
+  name: jmeter-service
+
+app: jmeter
+
+namespace: jmeter-namespace
+
+suffix:
+  name: svc.cluster.local
+env:
+  report_name: my-report
+  email:
+
+system:
+  heap: "-Xms3g -Xmx6g"
+  http_proxy: 
+  https_proxy:
+
+serviceAccount:
+  name: terminate-jmeter-sa
+  role: terminate-jmeter-role
+  roleBinding: terminate-jmeter-role-binding
+
+
+destination:
+  target: aws

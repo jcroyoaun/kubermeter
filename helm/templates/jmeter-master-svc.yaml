@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: jmeter-master-service
+  namespace: {{ printf "%s-%s" .Values.namespace (toString .Values.namespaceSuffix) }}
+spec:
+  selector:
+    job-name: jmeter-master
+  ports:
+    - protocol: TCP
+      port: 1099
+      targetPort: 1099
+  clusterIP: None

@@ -1,0 +1,2 @@
+-GbaseUrl: prometheus-server.prometheus.svc.cluster.local 
+-Gport: 80

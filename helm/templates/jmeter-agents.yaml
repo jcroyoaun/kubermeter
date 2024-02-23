@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.app }}
+  namespace: {{ printf "%s-%s" .Values.namespace (toString .Values.namespaceSuffix) }}
+spec:
+  serviceName: "{{ .Values.service.name }}" 
+  replicas: {{ $.Values.image.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.app }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app }}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-group-purpose
+                    operator: In
+                    values:
+                      - jmeter
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ .Values.app }}
+                topologyKey: "kubernetes.io/hostname"
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: "kubernetes.io/hostname"
+          whenUnsatisfiable: "ScheduleAnyway"
+          labelSelector:
+            matchLabels:
+              app: {{ .Values.app }}
+      volumes:
+        - name: properties-volume
+          configMap:
+            name: {{ .Values.propsconfigmap.name }}
+        - name: jmx-volume
+          configMap:
+            name: {{ .Values.jmxconfigmap.name }}
+        - name: run-volume
+          configMap:
+            name: {{ .Values.runconfigmap.name }}
+            defaultMode: 0744
+        - name: perf-jmeter-pv
+          persistentVolumeClaim:
+            claimName: perf-jmeter-pvc
+      containers:
+        - name: {{ .Values.app }}
+          image: "{{ .Values.image.repository }}/{{ .Values.image.name }}:{{ .Values.image.tag }}"
+          command: ["/bin/sh", "/usr/properties/jmeter-server"]
+#          lifecycle:
+#            postStart:
+#              exec:
+#                command: ["/usr/run/run.sh"]
+          ports:
+            - containerPort: 1099
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: properties-volume
+              mountPath: /usr/properties
+            - name: jmx-volume
+              mountPath: /tmp/artifacts/jmx
+            - name: run-volume
+              mountPath: /usr/run/run.sh
+              subPath: run.sh
+            - name: run-volume
+              mountPath: /usr/run/CheckClustersReadiness.java
+              subPath: CheckClustersReadiness.java
+            - name: perf-jmeter-pv
+              mountPath: /mnt/nfs
+          resources:
+            requests:
+              memory: "2892Mi"  
+          env:
+            - name: CONTROLLER_POD
+              value: "{{ .Values.app }}-0"
+            - name: REPORT_NAME
+              value: {{ .Values.env.report_name }}
+            - name: EMAIL_ADDRESS
+              value: {{ .Values.env.email }}
+            - name: HEAP
+              value: {{ .Values.system.heap }}
+            - name: MY_SERVICE_HOST
+              value: "jmeter-service"  # The name of your service
+          {{- if .Values.system.https_proxy }}
+            - name: https_proxy
+              value: {{ .Values.system.https_proxy }}
+          {{- end }}
+          {{- if .Values.system.http_proxy }}
+            - name: http_proxy
+              value: {{ .Values.system.http_proxy }}
+          {{- end }}  
+            - name: MY_SERVICE_PORT
+              value: "1099"  # The port of your service
+      terminationGracePeriodSeconds: 10

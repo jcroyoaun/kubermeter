@@ -1,0 +1,114 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.runconfigmap.name }}
+  namespace: {{ printf "%s-%s" .Values.namespace (toString .Values.namespaceSuffix) }}
+data:
+  run.sh: |
+    #!/usr/bin/env bash
+
+    set -o errexit
+    set -o pipefail
+    export RMI_HOST_DEF=-Djava.rmi.server.hostname=$POD_IP
+    readonly work_dir=$(dirname "$(readlink --canonicalize-existing "${0}" 2> /dev/null)")
+    readonly script_name="${0##*/}"
+    readonly output_path="/mnt/nfs"
+    readonly jmeter_path="/opt/apache-jmeter-5.5/bin/jmeter"
+    readonly jmx_file="/tmp/artifacts/jmx/jmeter-script.jmx"
+    readonly jtl_file="${output_path}/test_results.jtl"
+    readonly output_format="csv"
+    readonly reports_name="reports"
+    readonly reports_path="${output_path}/${reports_name}"
+    readonly remote_hosts_file="/usr/properties/target_hosts.txt"
+    readonly variable_file="/usr/properties/vars.yaml"
+    readonly check_clusters_app="${work_dir}/CheckClustersReadiness.java"
+    readonly csv_file_path="/tmp/artifacts/jmx/csv_file.csv"
+    readonly REPORT_NAME="JMeter_HTML_Report"
+    declare -a params
+    
+    remote_hosts=$(paste -sd "," "${remote_hosts_file}")
+   
+    config_map_content=$(cat ${variable_file}) 
+    
+    # Build the JMeter command
+    jmeter_cmd=("${jmeter_path}" -Dhttp.proxyHost=${https_proxy%:*} -Dhttp.proxyPort=${https_proxy##*:} -n -t "${jmx_file}" -l "${jtl_file}" ${config_map_content} -Jjmeter.save.saveservice.output_format="${output_format}" -R ${remote_hosts})
+
+    # Sart jmeter server 
+
+    /opt/apache-jmeter-5.5/bin/jmeter ${RMI_HOST_DEF} -Dserver_port=${SERVER_PORT:-1099} -s -j jmeter-server.log "$@" &
+     
+    # Run the JMeter command
+    echo "${jmeter_cmd[@]}"
+    "${jmeter_cmd[@]}"
+
+    
+    # Generate HTML report
+    mkdir -p "${reports_path}" && "${jmeter_path}" -Jjmeter.reportgenerator.overall_granularity=10000 -Jjmeter.save.saveservice.assertion_results_failure_message=false -g "${jtl_file}" -Jjmeter.reportgenerator.report_title="${REPORT_NAME}" -o "${reports_path}/."
+    
+    cd "${output_path}"
+    tar -czvf "${reports_name}.tar.gz" "${reports_name}"
+    tar -czvf jmeter-report-data.tar.gz .
+
+    kill -SIGTERM $(pgrep jmeter)
+  CheckClustersReadiness.java: |
+    import java.io.File;
+    import java.io.FileNotFoundException;
+    import java.net.Socket;
+    import java.util.Scanner;
+    import java.util.concurrent.TimeUnit;
+
+    public class CheckClustersReadiness {
+        public static void main(String[] args) {
+            if (args.length < 1) {
+                System.out.println("Usage: RMIPortCheck <filename>");
+                return;
+            }
+
+            String filename = args[0];
+            int port = 1099;
+            long startTime = System.currentTimeMillis();
+            long timeout = TimeUnit.MINUTES.toMillis(15);
+            boolean allReachable = true;
+
+            try {
+                Scanner scanner = new Scanner(new File(filename));
+
+                while (scanner.hasNextLine()) {
+                    String hostname = scanner.nextLine();
+                    boolean reachable = false;
+
+                    while (System.currentTimeMillis() - startTime < timeout) {
+                        try {
+                            Socket socket = new Socket(hostname, port);
+                            System.out.println(hostname + ": is running jmeter-server and is ready to test.");
+                            socket.close();
+                            reachable = true;
+                            break;
+                        } catch (Exception e) {
+                            System.out.println(hostname + ": Waiting for host to start");
+                            Thread.sleep(10000);
+                        }
+                    }
+
+                    if (!reachable) {
+                        System.out.println(hostname + ": RMI port on host is still closed or unavailable after 5 minutes");
+                        allReachable = false;
+                    }
+                }
+
+                scanner.close();
+
+                if (allReachable) {
+                    System.out.println("All hosts are reachable through port " + port);
+                } else {
+                    System.out.println("Not all hosts are reachable through port " + port);
+                    System.exit(1);
+                }
+            } catch (FileNotFoundException e) {
+                System.out.println("File not found: " + filename);
+            } catch (InterruptedException e) {
+                System.out.println("Interrupted while waiting for retry");
+            }
+        }
+    }
+

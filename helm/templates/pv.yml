@@ -1,0 +1,20 @@
+{{ if eq .Values.destination.target "onprem" }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  labels:
+    app: {{ .Values.app }}
+    namespace: {{ printf "%s-%s" .Values.namespace (toString .Values.namespaceSuffix) }}
+  name: perf-jmeter-pv-{{ printf "%s-%s" .Values.namespace (toString .Values.namespaceSuffix) }}
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: local-storage
+  hostPath:
+    path: /tmp/nfs/kubermeter-{{ printf "%s-%s" .Values.namespace (toString .Values.namespaceSuffix) }}
+    type: DirectoryOrCreate
+{{ end }}
+

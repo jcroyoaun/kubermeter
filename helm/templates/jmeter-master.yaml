@@ -1,0 +1,74 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.app }}-master 
+  namespace: {{ printf "%s-%s" .Values.namespace (toString .Values.namespaceSuffix) }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app }}-master 
+    spec:
+      initContainers:
+      - name: wait-for-agents
+        image: openjdk:11-jdk-oraclelinux7 
+        command: ['/usr/bin/java', '/usr/run/CheckClustersReadiness.java', '/usr/properties/target_hosts.txt']
+        volumeMounts:
+          - name: run-volume
+            mountPath: /usr/run
+          - name: properties-volume
+            mountPath: /usr/properties
+      containers:
+      - name: {{ .Values.app }}
+        image: "{{ .Values.image.repository }}/{{ .Values.image.name }}:{{ .Values.image.tag }}"
+        imagePullPolicy: Always
+        command: ["/usr/run/run.sh"]
+        resources:
+          requests:
+            memory: "2892Mi"  
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+      {{- if .Values.system.https_proxy }}
+        - name: https_proxy
+          value: {{ .Values.system.https_proxy }}
+      {{- end }} 
+      {{- if .Values.system.http_proxy }}
+        - name: http_proxy
+          value: {{ .Values.system.http_proxy }}
+      {{- end }}
+        - name: RMI_HOST_DEF
+          value: "-Djava.rmi.server.hostname=${POD_IP}"
+        - name: HEAP
+          value: {{ .Values.system.heap }}
+        ports:
+        - containerPort: 1099
+        volumeMounts:
+          - name: properties-volume
+            mountPath: /usr/properties
+          - name: jmx-volume
+            mountPath: /tmp/artifacts/jmx
+          - name: run-volume
+            mountPath: /usr/run/run.sh
+            subPath: run.sh
+          - name: perf-jmeter-pv
+            mountPath: /mnt/nfs
+      volumes:
+        - name: properties-volume
+          configMap:
+            name: {{ .Values.propsconfigmap.name }}
+        - name: jmx-volume
+          configMap:
+            name: {{ .Values.jmxconfigmap.name }}
+        - name: run-volume
+          configMap:
+            name: {{ .Values.runconfigmap.name }}
+            defaultMode: 0744
+        - name: perf-jmeter-pv
+          persistentVolumeClaim:
+            claimName: perf-jmeter-pvc
+      restartPolicy: Never
+
